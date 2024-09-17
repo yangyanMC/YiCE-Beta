@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>震动波形图</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: white; /* 设置背景颜色为白色 */
+        }
+        canvas {
+            max-width: 970px;
+            max-height: 400px;
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('sensor-chart').getContext('2d');
+            const myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [], // 时间戳
+                    datasets: [
+                        {
+                            label: 'X 轴',
+                            data: [],
+                            backgroundColor: 'transparent',
+                            borderColor: 'rgba(255, 0, 0, 1)', // X轴颜色为红色
+                            borderWidth: 1,
+                            fill: false,
+                            lineTension: 0, // 设置为直线
+                        },
+                        {
+                            label: 'Y 轴',
+                            data: [],
+                            backgroundColor: 'transparent',
+                            borderColor: 'rgba(0, 255, 0, 1)', // Y轴颜色为绿色
+                            borderWidth: 1,
+                            fill: false,
+                            lineTension: 0, // 设置为直线
+                        },
+                        {
+                            label: 'Z 轴',
+                            data: [],
+                            backgroundColor: 'transparent',
+                            borderColor: 'rgba(0, 0, 255, 1)', // Z轴颜色为蓝色
+                            borderWidth: 1,
+                            fill: false,
+                            lineTension: 0, // 设置为直线
+                        },
+                        {
+                            label: '震动强度',
+                            data: [],
+                            backgroundColor: 'transparent',
+                            borderColor: 'rgba(255, 165, 0, 1)', // 震动强度颜色为橙色
+                            borderWidth: 1,
+                            fill: false,
+                            lineTension: 0, // 设置为直线
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            min: -2, // 最小值
+                            max: 2, // 最大值
+                            grid: {
+                                display: true,
+                                drawBorder: false,
+                                lineWidth: 1,
+                                color: 'rgba(0, 0, 0, 0.5)'
+                            },
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    return value.toFixed(2);
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false,
+                            },
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 20,
+                                callback: function(value, index, values) {
+                                    return value;
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    elements: {
+                        point: {
+                            radius: 0 // 不显示数据点
+                        }
+                    },
+                    animation: {
+                        duration: 0 // 关闭动画
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                }
+            });
+
+            const socket = new WebSocket('ws://192.168.31.120:6460');
+
+            const wsStatusElement = document.getElementById('ws-status');
+            const wsAddressElement = document.getElementById('ws-address');
+            const intensityValueElement = document.getElementById('intensity-value');
+            const maxIntensityElement = document.getElementById('max-intensity-value');
+            const currentTimeElement = document.getElementById('current-time');
+
+            socket.addEventListener('open', function(event) {
+                console.log('WebSocket连接已打开！');
+                wsStatusElement.textContent = 'WebSocket状态: 打开';
+                wsStatusElement.style.color = 'green';
+            });
+
+            socket.addEventListener('error', function(event) {
+                console.error('WebSocket连接出现错误:', event);
+                wsStatusElement.textContent = 'WebSocket状态: 错误';
+                wsStatusElement.style.color = 'red';
+            });
+
+            socket.addEventListener('message', function(event) {
+                if (event.data instanceof Blob) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            updateChart(data);
+                        } catch (error) {
+                            console.error('解析数据失败:', e.target.result);
+                        }
+                    };
+                    reader.onerror = function(error) {
+                        console.error('读取数据失败:', error);
+                    };
+                    reader.readAsText(event.data);
+                } else {
+                    try {
+                        const data = JSON.parse(event.data);
+                        updateChart(data);
+                    } catch (error) {
+                        console.error('解析数据失败:', event.data);
+                    }
+                }
+            });
+
+            socket.addEventListener('close', function(event) {
+                console.log('WebSocket连接已关闭！');
+                wsStatusElement.textContent = 'WebSocket状态: 关闭';
+                wsStatusElement.style.color = 'red';
+            });
+
+            let maxIntensity = 0; // 新增变量来记录最大加速度
+            let currentIntensity = 0; // 当前加速度
+            let maxIntensityTimestamp = null; // 新增变量来记录最大加速度发生的时间戳
+
+            const maxDataPoints = 200; // 限制数据点数量
+            let sampleCounter = 0; // 用于控制数据采样的计数器
+            const sampleInterval = 5; // 每5个数据点才添加一个新的数据点到图表
+
+            function updateChart(data) {
+                const timestamp = new Date().getTime();
+                const intensity = Math.sqrt(data.x * data.x + data.y * data.y + data.z * data.z); // 更新最大加速度
+                maxIntensity = Math.max(maxIntensity, intensity);
+                currentIntensity = intensity;
+
+                if (maxIntensity === intensity) {
+                    maxIntensityTimestamp = timestamp;
+                }
+
+                sampleCounter++; // 增加采样计数器
+                if (sampleCounter % sampleInterval === 0) { // 每sampleInterval次才更新一次图表
+                    myChart.data.labels.push(timestamp);
+
+                    // 添加X、Y、Z轴的数据
+                    myChart.data.datasets[0].data.push(data.x);
+                    myChart.data.datasets[1].data.push(data.y);
+                    myChart.data.datasets[2].data.push(data.z);
+
+                    // 添加震动强度数据
+                    myChart.data.datasets[3].data.push(intensity);
+
+                    // 优化数据点管理
+                    if (myChart.data.labels.length > maxDataPoints) {
+                        myChart.data.labels.splice(0, myChart.data.labels.length - maxDataPoints);
+                        myChart.data.datasets.forEach(dataset => {
+                            dataset.data.splice(0, dataset.data.length - maxDataPoints);
+                        });
+                    }
+
+                    // 更新图表并自动滚动时间轴
+                    requestAnimationFrame(() => {
+                        myChart.options.scales.x.max = timestamp;
+                        myChart.update();
+                    });
+
+                    // 显示最新的震动强度
+                    intensityValueElement.textContent = `最新震动强度[PGA]: ${currentIntensity.toFixed(2)}`;
+
+                    // 显示最大加速度及其时间
+                    maxIntensityElement.textContent = `最大加速度[最大PGA]: ${maxIntensity.toFixed(2)} (${new Date(maxIntensityTimestamp).toLocaleString()})`;
+
+                    // 检查最大加速度是否超过1，并播放提示音和播报TTS
+                    if (maxIntensity > 1) {
+                        playAlertSound();
+                        speakMessage("本地烈度已大于1");
+                    }
+                }
+
+                // 显示当前时间
+                currentTimeElement.textContent = `当前时间: ${new Date().toLocaleString()}`;
+            }
+
+            function playAlertSound() {
+                const audio = document.getElementById('alert-sound');
+                if (audio.paused) {
+                    audio.currentTime = 0; // 重置音频位置
+                    audio.play();
+                }
+            }
+
+            function speakMessage(message) {
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(message);
+                    window.speechSynthesis.speak(utterance);
+                } else {
+                    console.warn("您的浏览器不支持TTS功能！");
+                }
+            }
+
+            // 添加全局函数以通过控制台命令播放音频
+            window.playAudioCommand = function(command) {
+                if (command === 'cs_sy') {
+                    playAlertSound();
+                    speakMessage("本地烈度已大于1");
+                }
+            };
+
+            // 在页面卸载时关闭WebSocket连接
+            window.addEventListener('beforeunload', function(event) {
+                socket.close();
+            });
+        });
+    </script>
+</head>
+<body>
+    <p style="font-size: 20px; color: red;">该项目为获取手机加速度传感器数据实现，仅本地使用。（试运行，数据仅供参考）</p>
+    <div id="ws-status">WebSocket状态: 初始化</div>
+    <div id="ws-address">WebSocket地址: ws://192.168.31.120:6460</div>
+    <br>
+    <div id="intensity-value">最新震动强度[PGA]: --</div>
+    <div id="max-intensity-value">最大加速度[最大PGA]: --</div>
+    <div id="current-time">当前时间: --</div>
+    <!-- 移除了震度等级和烈度的相关元素 -->
+    <canvas id="sensor-chart"></canvas>
+    <audio id="alert-sound" src="/media/eew1.mp3" preload="auto"></audio>
+</body>
+</html>

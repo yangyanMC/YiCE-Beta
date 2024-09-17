@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设备加速度数据</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>设备加速度数据</h1>
+    <p id="status">正在尝试连接到WebSocket服务器...</p>
+    <p id="data">正在获取数据...</p>
+
+    <script>
+        // 创建WebSocket连接
+        const socket = new WebSocket('ws://192.168.31.120:6460');
+
+        // 显示连接状态
+        const statusElement = document.getElementById('status');
+
+        // 连接打开时触发
+        socket.addEventListener('open', function(event) {
+            statusElement.textContent = '已成功连接到WebSocket服务器';
+            console.log('WebSocket连接已打开！');
+        });
+
+        // 发生错误时触发
+        socket.addEventListener('error', function(event) {
+            statusElement.textContent = 'WebSocket连接出现错误';
+            console.error('WebSocket连接出现错误:', event);
+        });
+
+        // 获取设备加速度数据
+        let accelerometerData = document.getElementById('data');
+        if (window.DeviceMotionEvent) {
+            window.addEventListener('devicemotion', function(event) {
+                const acceleration = event.acceleration;
+                const x = acceleration.x.toFixed(2);
+                const y = acceleration.y.toFixed(2);
+                const z = acceleration.z.toFixed(2);
+
+                // 更新显示的数据
+                accelerometerData.textContent = `X: ${x}, Y: ${y}, Z: ${z}`;
+
+                // 发送数据到WebSocket服务器
+                socket.send(JSON.stringify({x, y, z}));
+            }, true);
+        } else {
+            accelerometerData.textContent = '设备不支持运动感应';
+        }
+
+        // 关闭WebSocket连接
+        window.addEventListener('beforeunload', function() {
+            socket.close();
+        });
+    </script>
+</body>
+</html>
