@@ -12,5 +12,5 @@ webui.html是接收端
 最后用手机浏览器打开你的index.html所在IP即可 如：如: 192.168.1.45:1145/index.html
 再在电脑上打开 如: 127.0.0.1:1145/webui.html 就可以看到手机的数据啦！
 如果显示Websocket连接失败请检查Websocket是否正常（手机、电脑均有提示）
-## 截图：
-![image](jt.png)
+## 截图： （看不到就是图床挂了）
+![image](https://img.picui.cn/free/2024/09/17/66e8ffd880e39.png)
